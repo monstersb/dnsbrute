@@ -9,13 +9,15 @@ import "flag"
 import "math"
 
 // config
-var concurrency int = 100
+var concurrency int = 200
 var timeout int = 1
 var verbose bool = true
+var error int = 0
+var dns string = "8.8.8.8:53"
 
 
 func status(name string, done int, total int, timePassed int) {
-    fmt.Printf("%s\t [%ds  %d/%d]\r", name, timePassed, done, total)
+    fmt.Printf("%s\t [%d/%d %.2f%%] [time: %ds] [error: %d]\r", name, done, total, float32(done) / float32(total) * 100, timePassed, error)
 }
 
 func generator(target []byte, alpha []byte, length int, ch chan []byte) {
@@ -34,7 +36,7 @@ func generator(target []byte, alpha []byte, length int, ch chan []byte) {
             result[len(data) + 1 + i] = c
         }
         count += 1
-        if count % 0x10 == 0 && verbose {
+        if count % 0x100 == 0 && verbose {
             timePassed := time.Now().Unix() - startTime
 
             go status(string(result), count, total, int(timePassed))
@@ -53,7 +55,7 @@ func generator(target []byte, alpha []byte, length int, ch chan []byte) {
     }
 }
 
-func query(name []byte, dns string) bool {
+func query(name []byte) bool {
     conn, err := net.Dial("udp", dns)
     if err != nil {
         return false
@@ -109,13 +111,14 @@ func query(name []byte, dns string) bool {
     _, err = conn.Read(resp)
 
     if err != nil {
+        error += 1
         return false
     }
 
     return resp[3] & 0xF == 0 && resp[7] != 0
 }
 
-func brute(target []byte, alphabet []byte, length int, dns string) {
+func brute(target []byte, alphabet []byte, length int) {
     source := make(chan []byte)
     go generator(target, alphabet, length, source)
 
@@ -124,7 +127,7 @@ func brute(target []byte, alphabet []byte, length int, dns string) {
         wg.Add(1)
         go func () {
             for name := range source {
-                if query(name, fmt.Sprintf("%s:53", dns)) {
+                if query(name) {
                     fmt.Printf("\033[K%s\n", string(name))
                 }
             }
@@ -135,13 +138,12 @@ func brute(target []byte, alphabet []byte, length int, dns string) {
 }
 
 func main() {
-    var target, alphabet, dns string
+    var target, alphabet string
     var length int
 
     flag.StringVar(&target, "t", "", "Target You Want To Bruteforce")
     flag.StringVar(&alphabet, "a", "abcdefghijklmnopqrstuvwxyz", "Brute Alphabet")
     flag.IntVar(&length, "l", 3, "Sub Domain Name Length")
-    flag.StringVar(&dns, "dns", "8.8.8.8", "DNS Server")
     flag.Parse()
 
     if len(target) == 0 {
@@ -149,5 +151,5 @@ func main() {
         return
     }
 
-    brute([]byte(target), []byte(alphabet), length, dns)
+    brute([]byte(target), []byte(alphabet), length)
 }
